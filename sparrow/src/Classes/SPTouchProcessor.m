@@ -84,37 +84,8 @@
 {
     _elapsedTime += seconds;
 
-    if (_lastTaps.count)
-    {
-        NSMutableArray *remainingTaps = [NSMutableArray array];
+    [self processQueue];
 
-        for (SPTouch *touch in _lastTaps)
-            if (_elapsedTime - touch.timestamp <= _multitapTime)
-                [remainingTaps addObject:touch];
-
-        SP_RELEASE_AND_RETAIN(_lastTaps, remainingTaps);
-    }
-
-    if (_queuedTouches.count)
-    {
-        for (SPTouch *touch in _currentTouches)
-            if (touch.phase == SPTouchPhaseBegan || touch.phase == SPTouchPhaseMoved)
-                touch.phase = SPTouchPhaseStationary;
-
-        for (SPTouch *touch in _queuedTouches)
-            [_updatedTouches addObject:[self createOrUpdateTouch:touch]];
-
-        [self processTouches:_updatedTouches];
-        [_updatedTouches removeAllObjects];
-
-        NSMutableOrderedSet *remainingTouches = [NSMutableOrderedSet orderedSet];
-        for (SPTouch *touch in _currentTouches)
-            if (touch.phase != SPTouchPhaseEnded && touch.phase != SPTouchPhaseCancelled)
-                [remainingTouches addObject:touch];
-
-        SP_RELEASE_AND_RETAIN(_currentTouches, remainingTouches);
-        [_queuedTouches removeAllObjects];
-    }
 }
 
 - (void)enqueueTouch:(SPTouch *)touch
@@ -127,6 +98,72 @@
 - (NSInteger)numCurrentTouches
 {
     return _currentTouches.count;
+}
+
+#pragma mark Process Queue
+
+-(void)processQueue{
+    
+    if (_lastTaps.count)
+    {
+        NSMutableArray *remainingTaps = [NSMutableArray array];
+        
+        for (SPTouch *touch in _lastTaps)
+            if (_elapsedTime - touch.timestamp <= _multitapTime)
+                [remainingTaps addObject:touch];
+        
+        SP_RELEASE_AND_RETAIN(_lastTaps, remainingTaps);
+    }
+    
+    if (_queuedTouches.count)
+    {
+        //removes touches from queue with same ID
+        //adds these "excess" touches to new queue which is processed before the next frame
+        //ensures all touches are dispatched instead of tripping over/replacing themselves
+        NSMutableArray* excessQueue = [NSMutableArray array];
+        NSSet* touchIDs = [NSSet setWithArray:[_queuedTouches valueForKey:@"touchID"]];
+        NSMutableIndexSet *excessQueueIndexes = [[NSMutableIndexSet alloc] init];
+        
+        for(NSNumber* touchID in touchIDs)
+        {
+            int dupCount = 0;
+            for (SPTouch *touchExcess in _queuedTouches)
+            {
+                if(touchExcess.touchID == [touchID unsignedIntValue])
+                {
+                    dupCount++;
+                    if(dupCount >= 2)
+                    {
+                        [excessQueueIndexes addIndex:[_queuedTouches indexOfObject:touchExcess]];
+                        [excessQueue addObject:touchExcess];
+                    }
+                }
+            }
+        }
+        if(excessQueueIndexes.count)
+            [_queuedTouches removeObjectsAtIndexes:excessQueueIndexes];
+        
+        for (SPTouch *touch in _currentTouches)
+            if (touch.phase == SPTouchPhaseBegan || touch.phase == SPTouchPhaseMoved)
+                touch.phase = SPTouchPhaseStationary;
+        
+        for (SPTouch *touch in _queuedTouches)
+            [_updatedTouches addObject:[self createOrUpdateTouch:touch]];
+        
+        [self processTouches:_updatedTouches];
+        [_updatedTouches removeAllObjects];
+        
+        NSMutableOrderedSet *remainingTouches = [NSMutableOrderedSet orderedSet];
+        for (SPTouch *touch in _currentTouches)
+            if (touch.phase != SPTouchPhaseEnded && touch.phase != SPTouchPhaseCancelled)
+                [remainingTouches addObject:touch];
+        
+        SP_RELEASE_AND_RETAIN(_currentTouches, remainingTouches);
+        
+        SP_RELEASE_AND_RETAIN(_queuedTouches, excessQueue);
+        if(_queuedTouches.count)
+            [self processQueue];
+    }
 }
 
 #pragma mark Process Touches
