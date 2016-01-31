@@ -123,7 +123,6 @@
         NSMutableArray* excessQueue = [NSMutableArray array];
         NSSet* touchIDs = [NSSet setWithArray:[_queuedTouches valueForKey:@"touchID"]];
         NSMutableIndexSet *excessQueueIndexes = [[NSMutableIndexSet alloc] init];
-        
         for(NSNumber* touchID in touchIDs)
         {
             int dupCount = 0;
